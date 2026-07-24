@@ -181,5 +181,16 @@ class GeminiProvider(LLMProvider):
                 )
                 i += 1
 
+
         logger.info(f"\nBuilt native contents with {len(contents)} messages.")
+        for idx, c in enumerate(contents):
+            try:
+                c_dict = c.model_dump(exclude_none=True)
+                for part in c_dict.get("parts", []):
+                    if part.get("thought_signature") and isinstance(part["thought_signature"], bytes):
+                        import base64
+                        part["thought_signature"] = base64.b64encode(part["thought_signature"]).decode("utf-8")
+                logger.info(f"  Content #{idx}: {c_dict}")
+            except Exception as e:
+                logger.info(f"  Content #{idx}: (dump error: {e}) {c}")
         return contents
