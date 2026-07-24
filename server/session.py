@@ -9,6 +9,7 @@ class ChatMessage:
     tool_name: str | None = None
     tool_call_id: str | None = None
     args: dict | None = None
+    thought_signature: bytes | None = None
 
 
 @dataclass
@@ -24,9 +25,9 @@ class ConversationSession:
             ChatMessage(role="assistant", content=content, metadata=metadata)
         )
 
-    def add_tool_call_message(self, tool_name: str, tool_call_id: str | None, args: dict) -> None:
+    def add_tool_call_message(self, tool_name: str, tool_call_id: str | None, args: dict, thought_signature: bytes | None = None) -> None:
         self.messages.append(
-            ChatMessage(role="tool_call", tool_name=tool_name, tool_call_id=tool_call_id, args=args)
+            ChatMessage(role="tool_call", tool_name=tool_name, tool_call_id=tool_call_id, args=args, thought_signature=thought_signature)
         )
 
     def add_tool_result_message(self, tool_call_id: str | None, tool_name: str, content: str) -> None:
@@ -55,6 +56,9 @@ class ConversationSession:
             data["tool_call_id"] = message.tool_call_id
         if message.args is not None:
             data["args"] = message.args
+        if message.thought_signature is not None:
+            import base64
+            data["thought_signature"] = base64.b64encode(message.thought_signature).decode("utf-8")
         if message.metadata is not None:
             data["metadata"] = message.metadata
         return data

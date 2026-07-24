@@ -44,8 +44,18 @@ class GeminiProvider(LLMProvider):
         
         generic_tool_calls = []
         if response.function_calls:
-            for fc in response.function_calls:
-                generic_tool_calls.append(ToolCall(name=fc.name, args=fc.args, id=fc.id))
+            parts = response.candidates[0].content.parts if (response.candidates and response.candidates[0].content and response.candidates[0].content.parts) else []
+            for part in parts:
+                if part.function_call:
+                    fc = part.function_call
+                    generic_tool_calls.append(
+                        ToolCall(
+                            name=fc.name,
+                            args=fc.args,
+                            id=fc.id,
+                            thought_signature=getattr(part, "thought_signature", None)
+                        )
+                    )
         else:
             generic_tool_calls = None
 
@@ -81,37 +91,70 @@ class GeminiProvider(LLMProvider):
             }
         ]
 
-    def _build_request(self, session) -> str:
+    def _build_request(self, session) -> list[types.Content]:
         if not session.messages:
-            return ""
+            return []
 
-        transcript = [
-            "You are a helpful AI assistant. Continue the conversation using the transcript below.",
-            "",
-        ]
-
+        contents = []
         for message in session.messages:
             if message.role == "user":
-                label = "User"
-                content = message.content
+                contents.append(
+                    types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(text=message.content)]
+                    )
+                )
             elif message.role == "assistant":
-                label = "Assistant"
-                content = message.content
+                contents.append(
+                    types.Content(
+                        role="model",
+                        parts=[types.Part.from_text(text=message.content)]
+                    )
+                )
             elif message.role == "tool_call":
-                label = "Tool Call"
-                arg_str = ", ".join(f"{k}={v}" for k, v in message.args.items()) if message.args else ""
-                content = f"{message.tool_name}({arg_str})"
+                contents.append(
+                    types.Content(
+                        role="model",
+                        parts=[
+                            types.Part(
+                                function_call=types.FunctionCall(
+                                    name=message.tool_name,
+                                    args=message.args,
+                                    id=message.tool_call_id
+                                )
+                            )
+                        ]
+                    )
+                )
             elif message.role == "tool-result":
-                label = "Tool Result"
-                content = message.content
+                try:
+                    response_dict = json.loads(message.content)
+                    if not isinstance(response_dict, dict):
+                        response_dict = {"result": message.content}
+                except Exception:
+                    response_dict = {"result": message.content}
+
+                contents.append(
+                    types.Content(
+                        role="tool",
+                        parts=[
+                            types.Part(
+                                function_response=types.FunctionResponse(
+                                    name=message.tool_name or "",
+                                    response=response_dict,
+                                    id=message.tool_call_id
+                                )
+                            )
+                        ]
+                    )
+                )
             else:
-                label = message.role.capitalize()
-                content = message.content
-            
-            transcript.append(f"{label}: {content}")
+                contents.append(
+                    types.Content(
+                        role=message.role,
+                        parts=[types.Part.from_text(text=message.content or "")]
+                    )
+                )
 
-        transcript.append("Assistant:")
-
-        transcript_str = "\n".join(transcript)
-        logger.info(f"\nTranscript:\n{transcript_str}")
-        return transcript_str
+        logger.info(f"\nBuilt native contents with {len(contents)} messages.")
+        return contents

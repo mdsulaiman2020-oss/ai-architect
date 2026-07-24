@@ -5,6 +5,7 @@ class ToolCall:
     name: str
     args: dict
     id: str | None = None
+    thought_signature: bytes | None = None
 
 class LLMResponse:
     def __init__(self, text: str, latency_ms: float, prompt_tokens: int, candidates_tokens: int, total_tokens: int, model_name: str, function_calls: list[ToolCall] | None = None):

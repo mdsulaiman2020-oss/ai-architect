@@ -58,7 +58,8 @@ class Runtime:
                 self.session.add_tool_call_message(
                     tool_name=fc.name,
                     tool_call_id=fc.id,
-                    args=fc.args
+                    args=fc.args,
+                    thought_signature=fc.thought_signature
                 )
                 self.session.add_tool_result_message(
                     tool_call_id=fc.id,
