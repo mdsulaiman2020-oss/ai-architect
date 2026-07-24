@@ -2,9 +2,12 @@ const messagesEl = document.querySelector("#messages");
 const formEl = document.querySelector("#chatForm");
 const inputEl = document.querySelector("#messageInput");
 const sendButton = document.querySelector("#sendButton");
+const stopButton = document.querySelector("#stopButton");
 const resetButton = document.querySelector("#resetButton");
 const sessionLabel = document.querySelector("#sessionLabel");
 const API_BASE_URL = "http://127.0.0.1:8000";
+
+let abortController = null;
 
 const sessionId = getSessionId();
 sessionLabel.textContent = `Session ${sessionId.slice(0, 8)}`;
@@ -90,20 +93,32 @@ function updateMessage(messageEl, content, metadata = null) {
   }
 }
 
-function setLoading(isLoading) {
-  sendButton.disabled = isLoading;
+function setLoading(isLoading, isChat = false) {
   inputEl.disabled = isLoading;
   resetButton.disabled = isLoading;
-  sendButton.textContent = isLoading ? "Sending" : "Send";
+
+  if (isLoading) {
+    if (isChat) {
+      sendButton.style.display = "none";
+      stopButton.style.display = "flex";
+    } else {
+      sendButton.disabled = true;
+    }
+  } else {
+    sendButton.disabled = false;
+    sendButton.style.display = "flex";
+    stopButton.style.display = "none";
+  }
 }
 
-async function postJson(url, body) {
+async function postJson(url, body, signal = null) {
   const response = await fetch(`${API_BASE_URL}${url}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
+    signal,
   });
 
   const payload = await response.json();
@@ -126,17 +141,70 @@ formEl.addEventListener("submit", async (event) => {
   addMessage("user", message);
   const pendingEl = addMessage("assistant", "Thinking...");
 
-  setLoading(true);
+  setLoading(true, true);
+  abortController = new AbortController();
+
   try {
-    const payload = await postJson("/api/chat", {
-      session_id: sessionId,
-      message,
+    const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        message,
+      }),
+      signal: abortController.signal,
     });
-    updateMessage(pendingEl, payload.reply, payload.metadata);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "Stream request failed");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let accumulatedText = "";
+
+    // Clear "Thinking..."
+    updateMessage(pendingEl, "");
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n');
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const dataStr = line.slice(6);
+          if (dataStr === '[DONE]') break;
+          
+          if (dataStr) {
+            try {
+              const data = JSON.parse(dataStr);
+              if (data.text) {
+                accumulatedText += data.text;
+                updateMessage(pendingEl, accumulatedText);
+              }
+            } catch (e) {
+              console.error("Error parsing SSE chunk:", e);
+            }
+          }
+        }
+      }
+    }
   } catch (error) {
-    pendingEl.remove();
-    addMessage("error", error.message);
+    if (error.name === "AbortError") {
+      updateMessage(pendingEl, "Request cancelled.");
+      pendingEl.classList.add("error");
+    } else {
+      pendingEl.remove();
+      addMessage("error", error.message);
+    }
   } finally {
+    abortController = null;
     setLoading(false);
     inputEl.focus();
   }
@@ -164,6 +232,18 @@ inputEl.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
     formEl.requestSubmit();
+  }
+});
+
+// Stop event and click handler
+stopButton.addEventListener("click", () => {
+  const stopEvent = new CustomEvent("stop");
+  formEl.dispatchEvent(stopEvent);
+});
+
+formEl.addEventListener("stop", () => {
+  if (abortController) {
+    abortController.abort();
   }
 });
 

@@ -69,6 +69,41 @@ class GeminiProvider(LLMProvider):
             function_calls=generic_tool_calls,
         )
 
+    def generate_stream(self, session, tools: list[dict] | None = None):
+        contents = session if isinstance(session, str) else self._build_request(session)
+        gemini_tools = self._to_gemini_tools(tools)
+        
+        response_stream = self.client.models.generate_content_stream(
+            model=self.model_name,
+            contents=contents,
+            config={
+                "tools": gemini_tools,
+            } if gemini_tools else None,
+        )
+        
+        for chunk in response_stream:
+            if chunk.text:
+                yield {"type": "text", "content": chunk.text}
+                
+            if chunk.function_calls:
+                generic_tool_calls = []
+                # Handle possible multiple parts for native tools
+                parts = chunk.candidates[0].content.parts if (chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts) else []
+                for part in parts:
+                    if part.function_call:
+                        fc = part.function_call
+                        generic_tool_calls.append(
+                            ToolCall(
+                                name=fc.name,
+                                args=fc.args,
+                                id=fc.id,
+                                thought_signature=getattr(part, "thought_signature", None)
+                            )
+                        )
+                if generic_tool_calls:
+                    yield {"type": "tool_calls", "content": generic_tool_calls}
+
+
     def _to_gemini_tools(self, tools: list[dict] | None):
         if not tools:
             return None

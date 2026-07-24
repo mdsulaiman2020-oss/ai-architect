@@ -1,6 +1,8 @@
 import logging
+import json
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -81,6 +83,33 @@ def chat(request: ChatRequest):
         "session": session.to_dict(),
         "metadata": metadata,
     }
+
+
+@app.post("/api/chat/stream")
+def chat_stream(request: ChatRequest):
+    message = request.message.strip()
+    if not request.session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+    if not message:
+        raise HTTPException(status_code=400, detail="message is required")
+
+    session = sessions.get_or_create(request.session_id)
+    session.add_user_message(message)
+    
+    runtime = Runtime(get_runtime_provider(), session, registry)
+    
+    def event_generator():
+        accumulated_reply = []
+        for text_chunk in runtime.call_provider_stream():
+            if text_chunk:
+                accumulated_reply.append(text_chunk)
+                yield f"data: {json.dumps({'text': text_chunk})}\n\n"
+        
+        complete_reply = "".join(accumulated_reply)
+        session.add_assistant_message(complete_reply)
+        yield "data: [DONE]\n\n"
+        
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.post("/api/reset")

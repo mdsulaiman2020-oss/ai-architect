@@ -26,7 +26,17 @@
 
         <form id="chatForm" class="composer">
           <textarea id="messageInput" rows="1" placeholder="Message the agent" required></textarea>
-          <button id="sendButton" type="submit">Send</button>
+          <button id="sendButton" type="submit" title="Send message" aria-label="Send message">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5"></line>
+              <polyline points="5 12 12 5 19 12"></polyline>
+            </svg>
+          </button>
+          <button id="stopButton" type="button" title="Stop generating" aria-label="Stop generating" style="display: none;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+            </svg>
+          </button>
         </form>
       </section>
     </main>

@@ -81,3 +81,53 @@ class Runtime:
             status_code=500,
             detail="Tool execution loop exceeded maximum allowed iterations"
         )
+
+    def call_provider_stream(self):
+        max_iterations = 5
+        iterations = 0
+        
+        while iterations < max_iterations:
+            iterations += 1
+            has_tool_calls = False
+            tool_calls = []
+            
+            try:
+                # Consume the provider's generator
+                for chunk in self.provider.generate_stream(self.session, tools=self.registry.list_tools()):
+                    if chunk["type"] == "text":
+                        yield chunk["content"]
+                    elif chunk["type"] == "tool_calls":
+                        has_tool_calls = True
+                        tool_calls = chunk["content"]
+            except Exception:
+                logger.exception("Failed to generate response stream")
+                raise HTTPException(status_code=500, detail="Failed to generate response stream")
+            
+            if not has_tool_calls:
+                return  # Streaming finished completely
+
+            # Run tool executions
+            tool_results = []
+            for fc in tool_calls:
+                logger.info(f"Executing tool call (stream): {fc.name} (id: {fc.id}) with args {fc.args}")
+                try:
+                    result = self.registry.execute(fc.name, **fc.args)
+                except Exception as e:
+                    logger.error(f"Error executing tool {fc.name}: {e}")
+                    result = f"Error: {e}"
+                tool_results.append((fc.id, fc.name, str(result)))
+
+            # Update session messages
+            for fc in tool_calls:
+                self.session.add_tool_call_message(
+                    tool_name=fc.name, tool_call_id=fc.id, args=fc.args, thought_signature=fc.thought_signature
+                )
+            for fc_id, name, res in tool_results:
+                self.session.add_tool_result_message(
+                    tool_call_id=fc_id, tool_name=name, content=res
+                )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Tool execution loop exceeded maximum allowed iterations in stream"
+        )
