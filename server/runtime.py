@@ -46,7 +46,9 @@ class Runtime:
                 }
                 return response, metadata
 
-            # Process tool calls
+            # Collect tool calls and run executions
+            tool_calls = []
+            tool_results = []
             for fc in response.function_calls:
                 logger.info(f"Executing tool call: {fc.name} (id: {fc.id}) with args {fc.args}")
                 try:
@@ -54,17 +56,25 @@ class Runtime:
                 except Exception as e:
                     logger.error(f"Error executing tool {fc.name}: {e}")
                     result = f"Error: {e}"
-
+                
+                tool_calls.append(fc)
+                tool_results.append((fc.id, fc.name, str(result)))
+            
+            # Add all tool calls to session first
+            for fc in tool_calls:
                 self.session.add_tool_call_message(
                     tool_name=fc.name,
                     tool_call_id=fc.id,
                     args=fc.args,
                     thought_signature=fc.thought_signature
                 )
+            
+            # Add all tool results to session next
+            for fc_id, name, res in tool_results:
                 self.session.add_tool_result_message(
-                    tool_call_id=fc.id,
-                    tool_name=fc.name,
-                    content=str(result)
+                    tool_call_id=fc_id,
+                    tool_name=name,
+                    content=res
                 )
 
         raise HTTPException(

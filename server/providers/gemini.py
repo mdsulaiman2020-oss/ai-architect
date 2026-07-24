@@ -100,7 +100,11 @@ class GeminiProvider(LLMProvider):
             logger.info(f"Msg #{idx}: role={m.role}, tool_name={m.tool_name}, id={m.tool_call_id}, has_sig={m.thought_signature is not None}")
 
         contents = []
-        for message in session.messages:
+        i = 0
+        n = len(session.messages)
+        while i < n:
+            message = session.messages[i]
+            
             if message.role == "user":
                 contents.append(
                     types.Content(
@@ -108,6 +112,7 @@ class GeminiProvider(LLMProvider):
                         parts=[types.Part.from_text(text=message.content)]
                     )
                 )
+                i += 1
             elif message.role == "assistant":
                 contents.append(
                     types.Content(
@@ -115,42 +120,56 @@ class GeminiProvider(LLMProvider):
                         parts=[types.Part.from_text(text=message.content)]
                     )
                 )
+                i += 1
             elif message.role == "tool_call":
-                contents.append(
-                    types.Content(
-                        role="model",
-                        parts=[
-                            types.Part(
-                                function_call=types.FunctionCall(
-                                    name=message.tool_name,
-                                    args=message.args,
-                                    id=message.tool_call_id
-                                ),
-                                thought_signature=message.thought_signature
+                parts = []
+                thought_sig = None
+                while i < n and session.messages[i].role == "tool_call":
+                    m = session.messages[i]
+                    parts.append(
+                        types.Part(
+                            function_call=types.FunctionCall(
+                                name=m.tool_name,
+                                args=m.args,
+                                id=m.tool_call_id
                             )
-                        ]
+                        )
                     )
-                )
+                    if m.thought_signature:
+                        thought_sig = m.thought_signature
+                    i += 1
+                
+                content_obj = types.Content(role="model", parts=parts)
+                if thought_sig:
+                    content_obj.parts[0].thought_signature = thought_sig
+                contents.append(content_obj)
+                
             elif message.role == "tool-result":
-                try:
-                    response_dict = json.loads(message.content)
-                    if not isinstance(response_dict, dict):
-                        response_dict = {"result": message.content}
-                except Exception:
-                    response_dict = {"result": message.content}
-
+                parts = []
+                while i < n and session.messages[i].role == "tool-result":
+                    m = session.messages[i]
+                    try:
+                        response_dict = json.loads(m.content)
+                        if not isinstance(response_dict, dict):
+                            response_dict = {"result": m.content}
+                    except Exception:
+                        response_dict = {"result": m.content}
+                    
+                    parts.append(
+                        types.Part(
+                            function_response=types.FunctionResponse(
+                                name=m.tool_name or "",
+                                response=response_dict,
+                                id=m.tool_call_id
+                            )
+                        )
+                    )
+                    i += 1
+                
                 contents.append(
                     types.Content(
                         role="user",
-                        parts=[
-                            types.Part(
-                                function_response=types.FunctionResponse(
-                                    name=message.tool_name or "",
-                                    response=response_dict,
-                                    id=message.tool_call_id
-                                )
-                            )
-                        ]
+                        parts=parts
                     )
                 )
             else:
@@ -160,6 +179,7 @@ class GeminiProvider(LLMProvider):
                         parts=[types.Part.from_text(text=message.content or "")]
                     )
                 )
+                i += 1
 
         logger.info(f"\nBuilt native contents with {len(contents)} messages.")
         return contents
