@@ -95,6 +95,10 @@ class GeminiProvider(LLMProvider):
         if not session.messages:
             return []
 
+        logger.info("\n=== Rebuilding Request ===")
+        for idx, m in enumerate(session.messages):
+            logger.info(f"Msg #{idx}: role={m.role}, tool_name={m.tool_name}, id={m.tool_call_id}, has_sig={m.thought_signature is not None}")
+
         contents = []
         for message in session.messages:
             if message.role == "user":
@@ -121,7 +125,8 @@ class GeminiProvider(LLMProvider):
                                     name=message.tool_name,
                                     args=message.args,
                                     id=message.tool_call_id
-                                )
+                                ),
+                                thought_signature=message.thought_signature
                             )
                         ]
                     )
@@ -136,7 +141,7 @@ class GeminiProvider(LLMProvider):
 
                 contents.append(
                     types.Content(
-                        role="tool",
+                        role="user",
                         parts=[
                             types.Part(
                                 function_response=types.FunctionResponse(
