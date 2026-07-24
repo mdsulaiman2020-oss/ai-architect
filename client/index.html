@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Runtime Chat</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="chat-panel" aria-label="Chat agent">
+        <header class="topbar">
+          <div class="brand">
+            <div class="brand-mark" aria-hidden="true">AI</div>
+            <div>
+              <h1>AI Runtime Chat</h1>
+              <p id="sessionLabel">Session loading...</p>
+            </div>
+          </div>
+          <button id="resetButton" class="reset-button" type="button" title="Reset session" aria-label="Reset session">
+            Reset
+          </button>
+        </header>
+
+        <div id="messages" class="messages" aria-live="polite"></div>
+
+        <form id="chatForm" class="composer">
+          <textarea id="messageInput" rows="1" placeholder="Message the agent" required></textarea>
+          <button id="sendButton" type="submit">Send</button>
+        </form>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
