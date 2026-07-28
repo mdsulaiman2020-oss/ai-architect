@@ -14,37 +14,39 @@ class GeminiProvider(LLMProvider):
         self.model_name = model_name
         self.client = genai.Client(api_key=self.api_key)
         
-    def generate(self, session, tools: list[dict] | None = None) -> LLMResponse:
+    async def generate(self, session, tools: list[dict] | None = None) -> LLMResponse:
         contents = session if isinstance(session, str) else self._build_request(session)
 
         gemini_tools = self._to_gemini_tools(tools)
         
         start_time = time.time()
         
-        response = self.client.models.generate_content(
+        response = await self.client.aio.models.generate_content(
             model=self.model_name,
             contents=contents,
             config={
                 "tools": gemini_tools,
             } if gemini_tools else None,
         )
-        end_time = time.time()
-        latency_ms = (end_time - start_time) * 1000
         
-        prompt_tokens = 0
-        candidates_tokens = 0
-        total_tokens = 0
+        latency_ms = (time.time() - start_time) * 1000
         
-        if response.usage_metadata:
+        used_model = response.model_version if hasattr(response, 'model_version') else self.model_name
+        
+        # Token usage logging
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
             prompt_tokens = response.usage_metadata.prompt_token_count
             candidates_tokens = response.usage_metadata.candidates_token_count
             total_tokens = response.usage_metadata.total_token_count
+            logger.info(f"Gemini Used Model: {used_model}")
+            logger.info(f"Gemini Tokens: prompt={prompt_tokens}, candidates={candidates_tokens}, total={total_tokens}")
+        else:
+            prompt_tokens = candidates_tokens = total_tokens = 0
             
-        used_model = getattr(response, "model_version", self.model_name)
-        
+        # Parse function calls
         generic_tool_calls = []
         if response.function_calls:
-            parts = response.candidates[0].content.parts if (response.candidates and response.candidates[0].content and response.candidates[0].content.parts) else []
+            parts = response.candidates[0].content.parts if response.candidates else []
             for part in parts:
                 if part.function_call:
                     fc = part.function_call
@@ -69,11 +71,11 @@ class GeminiProvider(LLMProvider):
             function_calls=generic_tool_calls,
         )
 
-    def generate_stream(self, session, tools: list[dict] | None = None):
+    async def generate_stream(self, session, tools: list[dict] | None = None):
         contents = session if isinstance(session, str) else self._build_request(session)
         gemini_tools = self._to_gemini_tools(tools)
         
-        response_stream = self.client.models.generate_content_stream(
+        response_stream = await self.client.aio.models.generate_content_stream(
             model=self.model_name,
             contents=contents,
             config={
@@ -81,7 +83,7 @@ class GeminiProvider(LLMProvider):
             } if gemini_tools else None,
         )
         
-        for chunk in response_stream:
+        async for chunk in response_stream:
             if chunk.text:
                 yield {"type": "text", "content": chunk.text}
                 

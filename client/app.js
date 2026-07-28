@@ -23,13 +23,80 @@ function getSessionId() {
   return created;
 }
 
+function renderMarkdown(content) {
+  if (!content) return "";
+  if (content === "Thinking...") {
+    return `<span class="thinking-indicator">Thinking<span class="thinking-dots"><span>.</span><span>.</span><span>.</span></span></span>`;
+  }
+  if (typeof window.marked !== "undefined") {
+    try {
+      return window.marked.parse(content, { breaks: true, gfm: true });
+    } catch (e) {
+      console.error("Marked parse error:", e);
+    }
+  }
+  
+  // Fallback safe markdown parser
+  let escaped = content
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // Code blocks
+  escaped = escaped.replace(/```([\s\S]*?)```/g, (_, code) => {
+    return `<pre><code>${code.trim()}</code></pre>`;
+  });
+
+  // Inline code
+  escaped = escaped.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+  // Bold (**text** or __text__)
+  escaped = escaped.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+  escaped = escaped.replace(/__(.*?)__/g, "<strong>$1</strong>");
+
+  // Italic (*text* or _text_)
+  escaped = escaped.replace(/\*(.*?)\*/g, "<em>$1</em>");
+  escaped = escaped.replace(/_(.*?)_/g, "<em>$1</em>");
+
+  // Line breaks
+  escaped = escaped.replace(/\n/g, "<br>");
+
+  return escaped;
+}
+
+function addCopyButtons(container) {
+  const pres = container.querySelectorAll("pre");
+  pres.forEach((pre) => {
+    if (pre.querySelector(".copy-code-btn")) return;
+    const button = document.createElement("button");
+    button.className = "copy-code-btn";
+    button.type = "button";
+    button.textContent = "Copy";
+    button.addEventListener("click", async () => {
+      const codeEl = pre.querySelector("code");
+      const textToCopy = codeEl ? codeEl.innerText : pre.innerText;
+      try {
+        await navigator.clipboard.writeText(textToCopy);
+        button.textContent = "Copied!";
+        setTimeout(() => {
+          button.textContent = "Copy";
+        }, 2000);
+      } catch (err) {
+        button.textContent = "Error";
+      }
+    });
+    pre.appendChild(button);
+  });
+}
+
 function addMessage(role, content, metadata = null) {
   const messageEl = document.createElement("div");
   messageEl.className = `message ${role}`;
 
   const contentEl = document.createElement("div");
-  contentEl.className = "message-content";
-  contentEl.textContent = content;
+  contentEl.className = "message-content markdown-body";
+  contentEl.innerHTML = renderMarkdown(content);
+  addCopyButtons(contentEl);
   messageEl.appendChild(contentEl);
 
   if (metadata) {
@@ -81,7 +148,8 @@ function createMetadataButton(metadata) {
 
 function updateMessage(messageEl, content, metadata = null) {
   const contentEl = messageEl.querySelector(".message-content");
-  contentEl.textContent = content;
+  contentEl.innerHTML = renderMarkdown(content);
+  addCopyButtons(contentEl);
 
   const existingMetadata = messageEl.querySelector(".metadata-button");
   if (existingMetadata) {
@@ -91,6 +159,7 @@ function updateMessage(messageEl, content, metadata = null) {
   if (metadata) {
     messageEl.appendChild(createMetadataButton(metadata));
   }
+  messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 function setLoading(isLoading, isChat = false) {
@@ -165,9 +234,6 @@ formEl.addEventListener("submit", async (event) => {
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let accumulatedText = "";
-
-    // Clear "Thinking..."
-    updateMessage(pendingEl, "");
 
     while (true) {
       const { done, value } = await reader.read();

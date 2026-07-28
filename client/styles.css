@@ -88,10 +88,43 @@ p {
   margin: 0;
 }
 
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 h1 {
   font-size: 19px;
   line-height: 1.25;
   font-weight: 750;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #127f45;
+  background: #e6f4ea;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #1e8e3e;
+  box-shadow: 0 0 0 2px rgba(30, 142, 62, 0.2);
+  animation: pulse-dot 2s infinite;
+}
+
+@keyframes pulse-dot {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(30, 142, 62, 0.4); }
+  70% { transform: scale(1); box-shadow: 0 0 0 5px rgba(30, 142, 62, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(30, 142, 62, 0); }
 }
 
 .topbar p {
@@ -131,13 +164,140 @@ h1 {
   max-width: min(760px, 82%);
   padding: 13px 42px 13px 15px;
   border-radius: 8px;
-  line-height: 1.45;
+  line-height: 1.5;
   overflow-wrap: anywhere;
   box-shadow: 0 8px 22px rgba(16, 32, 51, 0.06);
 }
 
 .message-content {
-  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.thinking-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--muted);
+  font-style: italic;
+  font-weight: 500;
+}
+
+.thinking-dots {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 2px;
+}
+
+.thinking-dots span {
+  animation: thinking-blink 1.4s infinite fill-mode: both;
+}
+
+.thinking-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinking-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes thinking-blink {
+  0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.1); }
+}
+
+/* Markdown typography styling */
+.markdown-body strong {
+  font-weight: 700;
+  color: inherit;
+}
+
+.message.user .markdown-body strong {
+  color: #ffffff;
+}
+
+.markdown-body em {
+  font-style: italic;
+}
+
+.markdown-body p {
+  margin: 0 0 8px 0;
+}
+
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 6px 0 10px 0;
+  padding-left: 20px;
+}
+
+.markdown-body li {
+  margin-bottom: 4px;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  margin: 12px 0 6px 0;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.markdown-body h1 { font-size: 1.3em; }
+.markdown-body h2 { font-size: 1.18em; }
+.markdown-body h3 { font-size: 1.08em; }
+
+.markdown-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.88em;
+  background: rgba(16, 32, 51, 0.07);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.message.user .markdown-body code {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.markdown-body pre {
+  position: relative;
+  background: #1e293b;
+  color: #f8fafc;
+  padding: 12px 14px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 10px 0;
+  font-size: 0.88em;
+  line-height: 1.45;
+}
+
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.copy-code-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #f8fafc;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.copy-code-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .message.user {

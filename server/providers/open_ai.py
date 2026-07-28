@@ -2,7 +2,7 @@ import time
 import logging
 import json
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 from response import LLMResponse, ToolCall
 from .base import LLMProvider
 
@@ -12,9 +12,9 @@ class OpenAIProvider(LLMProvider):
     def __init__(self, api_key: str, model_name: str):
         self.api_key = api_key
         self.model_name = model_name
-        self.client = OpenAI(api_key=self.api_key)
+        self.client = AsyncOpenAI(api_key=self.api_key)
         
-    def generate(self, session, tools: list[dict] | None = None) -> LLMResponse:
+    async def generate(self, session, tools: list[dict] | None = None) -> LLMResponse:
         messages = session if isinstance(session, list) else self._build_request(session)
         openai_tools = self._to_openai_tools(tools)
         
@@ -28,7 +28,7 @@ class OpenAIProvider(LLMProvider):
             params["tools"] = openai_tools
             
         logger.info(f"Sending request to OpenAI with model {self.model_name}")
-        response = self.client.chat.completions.create(**params)
+        response = await self.client.chat.completions.create(**params)
         
         end_time = time.time()
         latency_ms = (end_time - start_time) * 1000
@@ -72,6 +72,55 @@ class OpenAIProvider(LLMProvider):
             model_name=self.model_name,
             function_calls=generic_tool_calls,
         )
+
+    async def generate_stream(self, session, tools: list[dict] | None = None):
+        messages = session if isinstance(session, list) else self._build_request(session)
+        openai_tools = self._to_openai_tools(tools)
+        
+        params = {
+            "model": self.model_name,
+            "messages": messages,
+            "stream": True
+        }
+        if openai_tools:
+            params["tools"] = openai_tools
+
+        response = await self.client.chat.completions.create(**params)
+        
+        # Tool call aggregation across chunks
+        current_tool_calls = {}
+
+        async for chunk in response:
+            if chunk.choices and chunk.choices[0].delta:
+                delta = chunk.choices[0].delta
+                
+                if delta.content:
+                    yield {"type": "text", "content": delta.content}
+                    
+                if delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        if tc.index not in current_tool_calls:
+                            current_tool_calls[tc.index] = {"id": tc.id, "name": tc.function.name, "arguments": ""}
+                        if tc.function.arguments:
+                            current_tool_calls[tc.index]["arguments"] += tc.function.arguments
+        
+        if current_tool_calls:
+            generic_tool_calls = []
+            for tc_index in sorted(current_tool_calls.keys()):
+                tc = current_tool_calls[tc_index]
+                try:
+                    args = json.loads(tc["arguments"])
+                except json.JSONDecodeError:
+                    args = {}
+                generic_tool_calls.append(
+                    ToolCall(
+                        name=tc["name"],
+                        args=args,
+                        id=tc["id"]
+                    )
+                )
+            yield {"type": "tool_calls", "content": generic_tool_calls}
+
 
     def _to_openai_tools(self, tools: list[dict] | None):
         if not tools:

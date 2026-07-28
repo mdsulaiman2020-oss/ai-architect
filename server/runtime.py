@@ -9,7 +9,7 @@ class Runtime:
         self.provider = provider
         self.registry = registry
 
-    def call_provider(self):
+    async def call_provider(self):
         # Accumulate stats
         total_latency_ms = 0.0
         total_prompt_tokens = 0
@@ -23,7 +23,7 @@ class Runtime:
         while iterations < max_iterations:
             iterations += 1
             try:
-                response = self.provider.generate(self.session, tools=self.registry.list_tools())
+                response = await self.provider.generate(self.session, tools=self.registry.list_tools())
             except Exception:
                 logger.exception("Failed to generate response")
                 raise HTTPException(status_code=500, detail="Failed to generate response")
@@ -82,7 +82,7 @@ class Runtime:
             detail="Tool execution loop exceeded maximum allowed iterations"
         )
 
-    def call_provider_stream(self):
+    async def call_provider_stream(self):
         max_iterations = 5
         iterations = 0
         
@@ -93,7 +93,7 @@ class Runtime:
             
             try:
                 # Consume the provider's generator
-                for chunk in self.provider.generate_stream(self.session, tools=self.registry.list_tools()):
+                async for chunk in self.provider.generate_stream(self.session, tools=self.registry.list_tools()):
                     if chunk["type"] == "text":
                         yield chunk["content"]
                     elif chunk["type"] == "tool_calls":
