@@ -64,15 +64,69 @@ class ConversationSession:
         return data
 
 
-class InMemorySessionStore:
+    @classmethod
+    def from_dict(cls, data: dict) -> "ConversationSession":
+        session_id = data.get("session_id", "")
+        messages = []
+        for m in data.get("messages", []):
+            thought_sig = None
+            if "thought_signature" in m and m["thought_signature"]:
+                import base64
+                try:
+                    thought_sig = base64.b64decode(m["thought_signature"])
+                except Exception:
+                    pass
+            messages.append(
+                ChatMessage(
+                    role=m.get("role", "user"),
+                    content=m.get("content"),
+                    metadata=m.get("metadata"),
+                    tool_name=m.get("tool_name"),
+                    tool_call_id=m.get("tool_call_id"),
+                    args=m.get("args"),
+                    thought_signature=thought_sig,
+                )
+            )
+        return cls(session_id=session_id, messages=messages)
+
+
+class MongoSessionStore:
     def __init__(self):
-        self._sessions: dict[str, ConversationSession] = {}
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            from pymongo import MongoClient
+            from config import Config
+            self._client = MongoClient(Config.MONGODB_URI, serverSelectionTimeoutMS=2000)
+        return self._client
+
+    def _get_collection(self):
+        from config import Config
+        return self.client[Config.MONGODB_DB_NAME]["sessions"]
 
     def get_or_create(self, session_id: str) -> ConversationSession:
-        if session_id not in self._sessions:
-            self._sessions[session_id] = ConversationSession(session_id=session_id)
-        return self._sessions[session_id]
+        doc = self._get_collection().find_one({"session_id": session_id})
+        if doc:
+            return ConversationSession.from_dict(doc)
+        
+        return ConversationSession(session_id=session_id)
+
+    def save(self, session: ConversationSession) -> None:
+        data = session.to_dict()
+        from datetime import datetime, timezone
+        data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self._get_collection().update_one(
+            {"session_id": session.session_id},
+            {"$set": data},
+            upsert=True
+        )
 
     def reset(self, session_id: str) -> ConversationSession:
-        self._sessions[session_id] = ConversationSession(session_id=session_id)
-        return self._sessions[session_id]
+        self._get_collection().delete_one({"session_id": session_id})
+        session = ConversationSession(session_id=session_id)
+        self.save(session)
+        return session
+
+

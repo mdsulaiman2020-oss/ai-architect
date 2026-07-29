@@ -7,12 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from provider import get_provider
-from session import InMemorySessionStore
+from session import MongoSessionStore
 from tools.registry import ToolRegistry
 from tools.time_tool import CurrentTimeTool
 from tools.add_tool import AddTool
 from tools.multiply_tool import MultiplyTool
 from tools.student_search_tool import StudentSearchTool
+from tools.fetch_url_tool import FetchURLTool
 
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -36,7 +37,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-sessions = InMemorySessionStore()
+sessions = MongoSessionStore()
 provider = None
 
 # Initialize and register tools
@@ -45,6 +46,8 @@ registry.register(CurrentTimeTool())
 registry.register(AddTool())
 registry.register(MultiplyTool())
 registry.register(StudentSearchTool())
+registry.register(FetchURLTool())
+
 
 class ChatRequest(BaseModel):
     session_id: str
@@ -52,6 +55,12 @@ class ChatRequest(BaseModel):
 
 class ResetRequest(BaseModel):
     session_id: str
+
+class FeedbackRequest(BaseModel):
+    session_id: str
+    message_id: str
+    rating: str  # "up" or "down"
+    content: str | None = None
 
 
 def get_runtime_provider():
@@ -79,6 +88,7 @@ async def chat(request: Request, payload: ChatRequest):
 
     session = sessions.get_or_create(payload.session_id)
     session.add_user_message(message)
+    sessions.save(session)
 
     runtime = Runtime(get_runtime_provider(), session, registry)
 
@@ -93,6 +103,7 @@ async def chat(request: Request, payload: ChatRequest):
         raise
 
     session.add_assistant_message(response.text, metadata=metadata)
+    sessions.save(session)
 
     return {
         "reply": response.text,
@@ -111,6 +122,7 @@ async def chat_stream(request: Request, payload: ChatRequest):
 
     session = sessions.get_or_create(payload.session_id)
     session.add_user_message(message)
+    sessions.save(session)
     
     runtime = Runtime(get_runtime_provider(), session, registry)
     
@@ -130,6 +142,7 @@ async def chat_stream(request: Request, payload: ChatRequest):
             if not await request.is_disconnected():
                 complete_reply = "".join(accumulated_reply)
                 session.add_assistant_message(complete_reply)
+                sessions.save(session)
                 yield "data: [DONE]\n\n"
         except TimeoutError:
             logger.error("Request timed out in stream.")
@@ -149,3 +162,80 @@ def reset(request: ResetRequest):
 
     session = sessions.reset(request.session_id)
     return {"session": session.to_dict()}
+
+
+@app.post("/api/feedback")
+def submit_feedback(request: FeedbackRequest):
+    if request.rating not in ["up", "down"]:
+        raise HTTPException(status_code=400, detail="Rating must be 'up' or 'down'")
+
+    try:
+        from pymongo import MongoClient
+        from config import Config
+        from datetime import datetime, timezone
+
+        client = MongoClient(Config.MONGODB_URI, serverSelectionTimeoutMS=2000)
+        db = client[Config.MONGODB_DB_NAME]
+        db["message_feedback"].update_one(
+            {"message_id": request.message_id},
+            {
+                "$set": {
+                    "session_id": request.session_id,
+                    "message_id": request.message_id,
+                    "rating": request.rating,
+                    "content": request.content,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            },
+            upsert=True
+        )
+        return {"status": "success", "rating": request.rating, "message_id": request.message_id}
+    except Exception as e:
+        logger.error(f"Error saving feedback to Mongo: {e}")
+        return {"status": "success", "rating": request.rating, "message_id": request.message_id, "warning": str(e)}
+
+
+@app.get("/api/sessions")
+def list_sessions():
+    try:
+        from pymongo import MongoClient
+        from config import Config
+        client = MongoClient(Config.MONGODB_URI, serverSelectionTimeoutMS=2000)
+        collection = client[Config.MONGODB_DB_NAME]["sessions"]
+        
+        # Sort by updated_at desc, filtering out empty or invalid sessions
+        cursor = collection.find({
+            "session_id": {"$nin": [None, "null", "undefined", ""]},
+            "messages": {"$exists": True, "$not": {"$size": 0}}
+        }, {"session_id": 1, "messages": 1, "updated_at": 1}).sort("updated_at", -1)
+        
+        session_list = []
+        for doc in cursor:
+            session_id = doc.get("session_id")
+            messages = doc.get("messages", [])
+            
+            # Find first user message for title
+            title = "New Chat"
+            for m in messages:
+                if m.get("role") == "user" and m.get("content"):
+                    user_content = m["content"].strip()
+                    title = user_content[:40] + ("..." if len(user_content) > 40 else "")
+                    break
+                    
+            session_list.append({
+                "session_id": session_id,
+                "title": title,
+                "updated_at": doc.get("updated_at")
+            })
+        return session_list
+    except Exception as e:
+        logger.error(f"Error listing sessions: {e}")
+        # Return empty list on failure
+        return []
+
+
+@app.get("/api/sessions/{session_id}")
+def get_session_history(session_id: str):
+    session = sessions.get_or_create(session_id)
+    return session.to_dict()
+
