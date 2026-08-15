@@ -14,6 +14,10 @@ from tools.add_tool import AddTool
 from tools.multiply_tool import MultiplyTool
 from tools.student_search_tool import StudentSearchTool
 from tools.fetch_url_tool import FetchURLTool
+from tools.select_course_tool import SelectCourseTool
+from agents.assessment.assessment_agent import RunAssessmentAgentTool
+from agents.schedule.exam_schedule_agent import RunExamSchedulingTool
+from agents.schedule.exam_schedule_agent import RunExamReSchedulingTool
 
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -28,6 +32,8 @@ app.add_middleware(
     allow_origins=[
         "http://127.0.0.1:5500",
         "http://localhost:5500",
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
         "http://127.0.0.1:8080",
         "http://localhost:8080",
         "null",
@@ -47,11 +53,21 @@ registry.register(AddTool())
 registry.register(MultiplyTool())
 registry.register(StudentSearchTool())
 registry.register(FetchURLTool())
+registry.register(SelectCourseTool())
+registry.register(RunAssessmentAgentTool())
+registry.register(RunExamSchedulingTool())
+registry.register(RunExamReSchedulingTool())
 
 
 class ChatRequest(BaseModel):
     session_id: str
     message: str
+
+class ToolResultRequest(BaseModel):
+    session_id: str
+    tool_call_id: str
+    tool_name: str
+    result: str
 
 class ResetRequest(BaseModel):
     session_id: str
@@ -136,12 +152,65 @@ async def chat_stream(request: Request, payload: ChatRequest):
                         break
                         
                     if text_chunk:
-                        accumulated_reply.append(text_chunk)
-                        yield f"data: {json.dumps({'text': text_chunk})}\n\n"
+                        if isinstance(text_chunk, dict):
+                            # This is a UI event
+                            yield f"data: {json.dumps(text_chunk)}\n\n"
+                        else:
+                            accumulated_reply.append(text_chunk)
+                            yield f"data: {json.dumps({'text': text_chunk})}\n\n"
                         
             if not await request.is_disconnected():
-                complete_reply = "".join(accumulated_reply)
-                session.add_assistant_message(complete_reply)
+                if accumulated_reply:
+                    complete_reply = "".join(accumulated_reply)
+                    session.add_assistant_message(complete_reply)
+                sessions.save(session)
+                yield "data: [DONE]\n\n"
+        except TimeoutError:
+            logger.error("Request timed out in stream.")
+            yield f"data: {json.dumps({'text': '[Error: Request timed out]'})}\n\n"
+            yield "data: [DONE]\n\n"
+        except asyncio.CancelledError:
+            logger.info("Stream cancelled via asyncio.")
+            raise
+        
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/chat/stream_tool_result")
+async def chat_stream_tool_result(request: Request, payload: ToolResultRequest):
+    if not payload.session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    session = sessions.get_or_create(payload.session_id)
+    session.add_tool_result_message(
+        tool_call_id=payload.tool_call_id,
+        tool_name=payload.tool_name,
+        content=payload.result
+    )
+    sessions.save(session)
+    
+    runtime = Runtime(get_runtime_provider(), session, registry)
+    
+    async def event_generator():
+        accumulated_reply = []
+        try:
+            async with asyncio.timeout(60.0):
+                async for text_chunk in runtime.call_provider_stream():
+                    if await request.is_disconnected():
+                        logger.info("Client disconnected. Aborting stream.")
+                        break
+                        
+                    if text_chunk:
+                        if isinstance(text_chunk, dict):
+                            yield f"data: {json.dumps(text_chunk)}\n\n"
+                        else:
+                            accumulated_reply.append(text_chunk)
+                            yield f"data: {json.dumps({'text': text_chunk})}\n\n"
+                        
+            if not await request.is_disconnected():
+                if accumulated_reply:
+                    complete_reply = "".join(accumulated_reply)
+                    session.add_assistant_message(complete_reply)
                 sessions.save(session)
                 yield "data: [DONE]\n\n"
         except TimeoutError:
@@ -176,7 +245,7 @@ def submit_feedback(request: FeedbackRequest):
 
         client = MongoClient(Config.MONGODB_URI, serverSelectionTimeoutMS=2000)
         db = client[Config.MONGODB_DB_NAME]
-        db["message_feedback"].update_one(
+        db["agent_message_feedback"].update_one(
             {"message_id": request.message_id},
             {
                 "$set": {
@@ -195,13 +264,46 @@ def submit_feedback(request: FeedbackRequest):
         return {"status": "success", "rating": request.rating, "message_id": request.message_id, "warning": str(e)}
 
 
+@app.get("/api/courses")
+def get_courses():
+    return [
+        {"id": "CS301 Data Structures", "name": "CS301 - Data Structures"},
+        {"id": "CS302 Algorithms", "name": "CS302 - Algorithms"},
+        {"id": "DEN101 Local Anesthesia", "name": "DEN101 - Local Anesthesia"},
+        {"id": "DEN102 Anatomy", "name": "DEN102 - Anatomy"},
+        {"id": "DOS 326", "name": "Pre-Clinical Oral Surgery"},
+    ]
+
+@app.get("/api/exams")
+def get_exams():
+    try:
+        from db import get_db
+        collection = get_db()["agent_schedule"]
+        
+        cursor = collection.find({}).sort("created_at", -1)
+        
+        exam_list = []
+        for doc in cursor:
+            exam_list.append({
+                "id": str(doc.get("_id")),
+                "course_name": doc.get("course_name"),
+                "exam_type": doc.get("exam_type"),
+                "date": doc.get("date"),
+                "time": doc.get("time"),
+                "duration_minutes": doc.get("duration_minutes")
+            })
+        return exam_list
+    except Exception as e:
+        logger.error(f"Error fetching exams: {e}")
+        return []
+
 @app.get("/api/sessions")
 def list_sessions():
     try:
         from pymongo import MongoClient
         from config import Config
         client = MongoClient(Config.MONGODB_URI, serverSelectionTimeoutMS=2000)
-        collection = client[Config.MONGODB_DB_NAME]["sessions"]
+        collection = client[Config.MONGODB_DB_NAME]["agent_sessions"]
         
         # Sort by updated_at desc, filtering out empty or invalid sessions
         cursor = collection.find({

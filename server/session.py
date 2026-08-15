@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass, field
 
 
@@ -10,6 +11,8 @@ class ChatMessage:
     tool_call_id: str | None = None
     args: dict | None = None
     thought_signature: bytes | None = None
+    children: list["ChatMessage"] | None = None
+    name: str | None = None
 
 
 @dataclass
@@ -25,9 +28,9 @@ class ConversationSession:
             ChatMessage(role="assistant", content=content, metadata=metadata)
         )
 
-    def add_tool_call_message(self, tool_name: str, tool_call_id: str | None, args: dict, thought_signature: bytes | None = None) -> None:
+    def add_tool_call_message(self, tool_name: str, tool_call_id: str | None, args: dict, thought_signature: bytes | None = None, children: list[ChatMessage] | None = None) -> None:
         self.messages.append(
-            ChatMessage(role="tool_call", tool_name=tool_name, tool_call_id=tool_call_id, args=args, thought_signature=thought_signature)
+            ChatMessage(role="tool_call", tool_name=tool_name, tool_call_id=tool_call_id, args=args, thought_signature=thought_signature, children=children)
         )
 
     def add_tool_result_message(self, tool_call_id: str | None, tool_name: str, content: str) -> None:
@@ -37,6 +40,25 @@ class ConversationSession:
                 content=content,
                 tool_name=tool_name,
                 tool_call_id=tool_call_id
+            )
+        )
+
+    def add_validation_result_message(self, name: str, content: str) -> None:
+        self.messages.append(
+            ChatMessage(
+                role="validation-result",
+                content=content,
+                name=name
+            )
+        )   
+        
+    def add_client_ui_message(self, component: str, tool_call_id: str, args: dict) -> None:
+        self.messages.append(
+            ChatMessage(
+                role="client-ui",
+                name=component,
+                tool_call_id=tool_call_id,
+                args=args
             )
         )
 
@@ -61,6 +83,8 @@ class ConversationSession:
             data["thought_signature"] = base64.b64encode(message.thought_signature).decode("utf-8")
         if message.metadata is not None:
             data["metadata"] = message.metadata
+        if message.children is not None:
+            data["children"] = [self._message_to_dict(child) for child in message.children]
         return data
 
 
@@ -69,42 +93,37 @@ class ConversationSession:
         session_id = data.get("session_id", "")
         messages = []
         for m in data.get("messages", []):
-            thought_sig = None
-            if "thought_signature" in m and m["thought_signature"]:
-                import base64
-                try:
-                    thought_sig = base64.b64decode(m["thought_signature"])
-                except Exception:
-                    pass
-            messages.append(
-                ChatMessage(
-                    role=m.get("role", "user"),
-                    content=m.get("content"),
-                    metadata=m.get("metadata"),
-                    tool_name=m.get("tool_name"),
-                    tool_call_id=m.get("tool_call_id"),
-                    args=m.get("args"),
-                    thought_signature=thought_sig,
-                )
-            )
+            messages.append(cls._message_from_dict(m))
         return cls(session_id=session_id, messages=messages)
+
+    @classmethod
+    def _message_from_dict(cls, m: dict) -> ChatMessage:
+        thought_sig = None
+        if "thought_signature" in m and m["thought_signature"]:
+            import base64
+            try:
+                thought_sig = base64.b64decode(m["thought_signature"])
+            except Exception:
+                pass
+        children = None
+        if "children" in m and m["children"]:
+            children = [cls._message_from_dict(child) for child in m["children"]]
+        return ChatMessage(
+            role=m.get("role", "user"),
+            content=m.get("content"),
+            metadata=m.get("metadata"),
+            tool_name=m.get("tool_name"),
+            tool_call_id=m.get("tool_call_id"),
+            args=m.get("args"),
+            thought_signature=thought_sig,
+            children=children,
+        )
 
 
 class MongoSessionStore:
-    def __init__(self):
-        self._client = None
-
-    @property
-    def client(self):
-        if self._client is None:
-            from pymongo import MongoClient
-            from config import Config
-            self._client = MongoClient(Config.MONGODB_URI, serverSelectionTimeoutMS=2000)
-        return self._client
-
     def _get_collection(self):
-        from config import Config
-        return self.client[Config.MONGODB_DB_NAME]["sessions"]
+        from db import get_db
+        return get_db()["agent_sessions"]
 
     def get_or_create(self, session_id: str) -> ConversationSession:
         doc = self._get_collection().find_one({"session_id": session_id})
@@ -124,9 +143,13 @@ class MongoSessionStore:
         )
 
     def reset(self, session_id: str) -> ConversationSession:
-        self._get_collection().delete_one({"session_id": session_id})
+        from datetime import datetime, timezone
+        self._get_collection().update_one({"session_id": session_id}, {"$set": {"status": "deleted", "deleted_at": datetime.now(timezone.utc).isoformat()}})
         session = ConversationSession(session_id=session_id)
         self.save(session)
         return session
 
 
+# python -m uvicorn api_server:app --host 127.0.0.1 --port 8000 --reload
+
+# python -m http.server 5500 --bind 127.0.0.1

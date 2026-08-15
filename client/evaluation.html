@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Internal Evaluation View</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+    <style>
+      :root {
+        --bg-color: #0f172a;
+        --bg-card: #1e293b;
+        --text-main: #f8fafc;
+        --text-muted: #94a3b8;
+        --border-color: #334155;
+        --accent: #3b82f6;
+        --accent-hover: #2563eb;
+
+        /* Message role colors */
+        --role-user-bg: #3b82f6;
+        --role-user-text: #ffffff;
+        --role-assistant-bg: #1e293b;
+        --role-assistant-border: #475569;
+        --role-system-bg: #334155;
+        --role-tool-bg: #0f172a;
+        --role-tool-border: #f59e0b;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Inter", sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-main);
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 24px;
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--border-color);
+        flex-shrink: 0;
+      }
+
+      .header-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .header-title span {
+        color: var(--text-muted);
+        font-weight: 400;
+        font-size: 0.875rem;
+      }
+
+      .close-btn {
+        background: transparent;
+        border: 1px solid var(--border-color);
+        color: var(--text-main);
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .close-btn:hover {
+        background: var(--border-color);
+      }
+
+      .container {
+        flex: 1;
+        overflow-y: auto;
+        padding: 32px 24px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .timeline {
+        width: 100%;
+        /* max-width: 900px; */
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+
+      .message-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .message-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+        color: var(--text-muted);
+        padding-left: 4px;
+      }
+
+      .role-badge {
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.7rem;
+      }
+
+      .badge-user {
+        background: rgba(59, 130, 246, 0.2);
+        color: #60a5fa;
+      }
+      .badge-assistant {
+        background: rgba(16, 185, 129, 0.2);
+        color: #34d399;
+      }
+      .badge-system {
+        background: rgba(148, 163, 184, 0.2);
+        color: #cbd5e1;
+      }
+      .badge-tool {
+        background: rgba(245, 158, 11, 0.2);
+        color: #fbbf24;
+      }
+
+      .message {
+        padding: 4px 4px;
+        border-radius: 12px;
+        /* line-height: 1.6; */
+        font-size: 0.95rem;
+        box-shadow:
+          0 4px 6px -1px rgba(0, 0, 0, 0.1),
+          0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        word-break: break-word;
+      }
+
+      .msg-user {
+        background-color: var(--role-user-bg);
+        color: var(--role-user-text);
+        align-self: flex-end;
+        border-bottom-right-radius: 4px;
+        /* padding: 10px 16px; */
+      }
+
+      .msg-assistant {
+        background-color: var(--role-assistant-bg);
+        border: 1px solid var(--role-assistant-border);
+        align-self: flex-start;
+        border-bottom-left-radius: 4px;
+      }
+
+      .msg-system {
+        background-color: var(--role-system-bg);
+        border: 1px dashed var(--border-color);
+        align-self: center;
+        font-family: monospace;
+        font-size: 0.85rem;
+        width: 100%;
+      }
+
+      .msg-tool {
+        background-color: var(--role-tool-bg);
+        border-left: 4px solid var(--role-tool-border);
+        align-self: stretch;
+        font-family: monospace;
+        font-size: 0.85rem;
+        color: #e2e8f0;
+        padding: 8px 12px;
+      }
+
+      .msg-tool pre {
+        margin: 6px 0 0 0;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+
+      .metadata-block {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        font-size: 0.8rem;
+        color: #cbd5e1;
+      }
+
+      pre {
+        background: rgba(0, 0, 0, 0.3) !important;
+        padding: 12px;
+        border-radius: 6px;
+        overflow-x: auto;
+      }
+
+      code {
+        font-family: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
+      }
+
+      /* Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #475569;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #64748b;
+      }
+
+      .loader {
+        margin: auto;
+        color: var(--text-muted);
+        font-style: italic;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="header">
+      <div class="header-title">
+        Internal Evaluation
+        <span id="sessionDisplay">Loading...</span>
+      </div>
+      <button class="close-btn" onclick="window.close()">Close</button>
+    </header>
+
+    <main class="container">
+      <div id="timeline" class="timeline">
+        <div class="loader">Fetching session data...</div>
+      </div>
+    </main>
+
+    <script>
+      const API_BASE_URL = "http://127.0.0.1:8000";
+      const params = new URLSearchParams(window.location.search);
+      const sessionId = params.get("session_id");
+
+      if (sessionId) {
+        document.getElementById("sessionDisplay").textContent =
+          `ID: ${sessionId}`;
+        loadSessionHistory();
+      } else {
+        document.getElementById("timeline").innerHTML =
+          '<div class="loader">No session_id provided in URL.</div>';
+        document.getElementById("sessionDisplay").textContent = "";
+      }
+
+      async function loadSessionHistory() {
+        try {
+          const response = await fetch(
+            `${API_BASE_URL}/api/sessions/${sessionId}`,
+          );
+          if (!response.ok) throw new Error("Failed to fetch session");
+          const sessionData = await response.json();
+
+          const timelineEl = document.getElementById("timeline");
+          timelineEl.innerHTML = "";
+
+          if (!sessionData.messages || sessionData.messages.length === 0) {
+            timelineEl.innerHTML =
+              '<div class="loader">No messages found in this session.</div>';
+            return;
+          }
+
+          sessionData.messages.forEach((msg, index) => {
+            timelineEl.appendChild(createMessageElement(msg, index));
+          });
+        } catch (error) {
+          console.error(error);
+          document.getElementById("timeline").innerHTML =
+            `<div class="loader" style="color: #ef4444">Error loading session: ${error.message}</div>`;
+        }
+      }
+
+      function createMessageElement(msg, index) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "message-wrapper";
+
+        // Header
+        const header = document.createElement("div");
+        header.className = "message-header";
+
+        const badge = document.createElement("span");
+        badge.className = `role-badge badge-${msg.role}`;
+        badge.textContent = msg.role;
+
+        const info = document.createElement("span");
+        info.textContent = `#${index + 1}`;
+
+        header.appendChild(badge);
+        header.appendChild(info);
+        wrapper.appendChild(header);
+
+        // Content
+        const contentBox = document.createElement("div");
+
+        let normalizedRole = msg.role;
+        if (
+          msg.role === "tool_call" ||
+          msg.role === "tool-result" ||
+          msg.role === "validation-result" ||
+          msg.role === "client-ui"
+        ) {
+          normalizedRole = "tool";
+        }
+        contentBox.className = `message msg-${normalizedRole}`;
+
+        let textToParse = "";
+        if (typeof msg.content === "string") {
+          textToParse = msg.content;
+        } else if (msg.content) {
+          textToParse = JSON.stringify(msg.content, null, 2);
+        }
+
+        let htmlContent = "";
+        if (msg.role === "tool_call") {
+          const tName = msg.tool_name || "Unknown Tool";
+          const tArgs = msg.args
+            ? typeof msg.args === "string"
+              ? msg.args
+              : JSON.stringify(msg.args, null, 2)
+            : "{}";
+          htmlContent = `<strong>Tool Call Requested:</strong><br/>
+            <div style="margin-top: 5px; font-family: monospace; font-size: 0.85rem; color: #f59e0b;">
+               ${escapeHtml(tName)}(${escapeHtml(tArgs)})
+            </div>`;
+        } else if (msg.role === "tool-result") {
+          let toolIdStr = msg.tool_call_id ? ` (ID: ${msg.tool_call_id})` : "";
+          let toolNameStr = msg.tool_name ? ` [${msg.tool_name}]` : "";
+          htmlContent = `<strong>Tool Result${toolNameStr}${toolIdStr}:</strong><br/><pre><code>${escapeHtml(textToParse)}</code></pre>`;
+        } else if (msg.role === "validation-result") {
+          let vName = msg.name || "";
+          htmlContent = `<strong>Validation Result [${escapeHtml(vName)}]:</strong><br/><pre><code>${escapeHtml(textToParse)}</code></pre>`;
+        } else if (msg.role === "client-ui") {
+          const cName = msg.args?.status || "Unknown Component";
+          const cArgs = msg.args ? JSON.stringify(msg.args, null, 2) : "{}";
+          htmlContent = `<div style="padding: 10px; background: rgba(59, 130, 246, 0.1); border-left: 4px solid #3b82f6; border-radius: 4px;">
+            <strong>🖥️ Client UI Triggered:</strong> ${escapeHtml(cName)}<br/>
+            <pre style="margin-top: 6px; background: rgba(0,0,0,0.2) !important;"><code>${escapeHtml(cArgs)}</code></pre>
+          </div>`;
+        } else if (msg.role === "system") {
+          htmlContent = escapeHtml(textToParse);
+        } else {
+          try {
+            htmlContent = marked.parse(textToParse);
+          } catch (e) {
+            htmlContent = `<pre><code>Error rendering markdown: ${e.message}<br/>${escapeHtml(textToParse)}</code></pre>`;
+          }
+        }
+
+        contentBox.innerHTML = htmlContent;
+
+        // Metadata handling
+        if (msg.metadata && Object.keys(msg.metadata).length > 0) {
+          const metaBox = document.createElement("div");
+          metaBox.className = "metadata-block";
+          metaBox.innerHTML = `<strong>Metadata:</strong><pre><code>${JSON.stringify(msg.metadata, null, 2)}</code></pre>`;
+          contentBox.appendChild(metaBox);
+        }
+
+        wrapper.appendChild(contentBox);
+        return wrapper;
+      }
+
+      function escapeHtml(unsafe) {
+        if (!unsafe) return "";
+        return unsafe
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+    </script>
+  </body>
+</html>

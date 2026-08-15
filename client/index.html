@@ -1,49 +1,144 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AI Runtime Chat</title>
-    <link rel="stylesheet" href="/styles.css">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HEBA AI</title>
+    <link rel="stylesheet" href="/styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
   </head>
   <body>
     <main class="app-shell">
+      <div id="sidebarOverlay" class="sidebar-overlay"></div>
       <aside class="sidebar">
         <button id="newChatButton" class="new-chat-btn" type="button">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
           </svg>
           New chat
         </button>
         <div id="sessionsList" class="sessions-list"></div>
+        <div
+          class="sidebar-footer"
+          style="
+            padding-top: 16px;
+            margin-top: auto;
+            border-top: 1px solid var(--panel-border);
+          "
+        >
+          <button
+            id="themeToggleBtn"
+            class="action-btn"
+            style="width: 100%; justify-content: center; height: 36px"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="theme-icon-light"
+              style="display: none"
+            >
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="theme-icon-dark"
+            >
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+            <span class="theme-btn-text" style="margin-left: 8px"
+              >Dark Mode</span
+            >
+          </button>
+        </div>
       </aside>
       <section class="chat-panel" aria-label="Chat agent">
-        <header class="topbar">
-          <div class="brand">
-            <div class="brand-mark" aria-hidden="true">AI</div>
-            <div>
-              <div class="title-row">
-                <h1>AI Runtime Chat</h1>
-                <span class="status-badge"><span class="status-dot"></span> Online</span>
-              </div>
-              <p id="sessionLabel">Session loading...</p>
-            </div>
-          </div>
-        </header>
+        <div class="mobile-header">
+          <button id="mobileMenuBtn" aria-label="Open menu">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <span>HEBA AI</span>
+        </div>
 
         <div id="messages" class="messages" aria-live="polite"></div>
 
         <form id="chatForm" class="composer">
-          <textarea id="messageInput" rows="1" placeholder="Message the agent" required></textarea>
-          <button id="sendButton" type="submit" title="Send message" aria-label="Send message">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <textarea
+            id="messageInput"
+            rows="1"
+            placeholder="How can I help you today ?"
+            required
+          ></textarea>
+          <button
+            id="sendButton"
+            type="submit"
+            title="Send message"
+            aria-label="Send message"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <line x1="12" y1="19" x2="12" y2="5"></line>
               <polyline points="5 12 12 5 19 12"></polyline>
             </svg>
           </button>
-          <button id="stopButton" type="button" title="Stop generating" aria-label="Stop generating" style="display: none;">
+          <button
+            id="stopButton"
+            type="button"
+            title="Stop generating"
+            aria-label="Stop generating"
+            style="display: none"
+          >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <rect x="5" y="5" width="14" height="14" rx="2"></rect>
             </svg>

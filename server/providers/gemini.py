@@ -209,6 +209,17 @@ class GeminiProvider(LLMProvider):
                         parts=parts
                     )
                 )
+            elif message.role == "validation-result":
+                contents.append(
+                    types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(text=message.content or "")]
+                    )
+                )
+                i += 1
+            elif message.role == "client-ui":
+                # The client-ui role is for frontend rendering only and should not be sent to the LLM.
+                i += 1
             else:
                 contents.append(
                     types.Content(

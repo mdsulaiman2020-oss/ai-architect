@@ -44,7 +44,7 @@ class StudentSearchTool(Tool):
 
         try:
             db = self.client[Config.MONGODB_DB_NAME]
-            collection = db["users_old"]
+            collection = db["agent_users_old"]
 
             safe_query = re.escape(query_str)
             regex = {"$regex": safe_query, "$options": "i"}
